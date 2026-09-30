@@ -30,7 +30,8 @@ done
 
 cd "$MIRO"
 [ -f .env ] || cp .env.example .env
-uv sync --quiet
+echo "=== Установка зависимостей MiroFish (первый раз ~5 ГБ, может занять 5–15 минут) ===" >&2
+uv sync
 uv run mirofish doctor
 
 mkdir -p "$LANDINGS" "$RESULTS"
