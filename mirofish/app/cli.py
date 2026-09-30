@@ -560,14 +560,17 @@ def cmd_doctor() -> int:
     if Config.LLM_PROVIDER in valid_providers:
         provider = Config.LLM_PROVIDER
 
+        # claude-cli / codex-cli shell out to the `claude` / `codex` binaries.
+        binary = provider.removesuffix("-cli")
+
         def provider_binary_on_path() -> bool:
-            return shutil.which(provider) is not None
+            return shutil.which(binary) is not None
 
         checks.append(
             DoctorCheck(
-                name=f"{provider} binary on PATH",
+                name=f"{binary} binary on PATH",
                 check=provider_binary_on_path,
-                hint=f"install the {provider} binary or add it to PATH",
+                hint=f"install the {binary} binary or add it to PATH",
             )
         )
 
