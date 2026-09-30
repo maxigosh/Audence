@@ -9,7 +9,7 @@
 #   REQUIREMENT=...  свой вопрос к симуляции вместо стандартного
 #   FETCH_ONLY=1     только скачать и показать текст лендингов, без симуляции
 #
-# Нужно: git, curl, uv, залогиненный Claude Code CLI (`claude`).
+# Нужно: git, curl, uv (https://astral.sh/uv), залогиненный Claude Code CLI (`claude`).
 # Результаты: results/<домен>/<run_id>/ (report/verdict.json, report/report.md, visuals/*.svg)
 set -euo pipefail
 
@@ -20,6 +20,9 @@ RESULTS="$ROOT/results"
 MAX_ROUNDS="${MAX_ROUNDS:-10}"
 
 if [ "$#" -gt 0 ]; then DOMAINS=("$@"); else DOMAINS=(watbot.ru watbot.org); fi
+
+# uv и claude часто ставятся в ~/.local/bin, которого может не быть в PATH
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 for bin in curl uv claude; do
   command -v "$bin" >/dev/null || { echo "Не найден '$bin' в PATH" >&2; exit 1; }
