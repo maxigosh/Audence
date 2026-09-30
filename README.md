@@ -24,6 +24,9 @@ less landings/watbot.ru.md
 ./run_landings.sh                    # watbot.ru и watbot.org
 ./run_landings.sh some-other.site    # любые домены
 MAX_ROUNDS=20 ./run_landings.sh      # больше раундов
+MAX_PAGES=0 ./run_landings.sh        # только главная, без внутренних страниц
 ```
+
+Скрипт берёт главную и до 15 внутренних страниц сайта (без блога, справки, кабинета) и склеивает их в `landings/<домен>.md`. Текст можно поправить руками и запустить с `FETCH=0`.
 
 Результаты — в `results/<домен>/<run_id>/`: сначала `report/verdict.json`, потом `report/summary.json` и `report/report.md`, картинки в `visuals/`. Отчёты MiroFish пишет на английском.

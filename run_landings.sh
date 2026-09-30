@@ -7,9 +7,11 @@
 # Настройки через переменные окружения:
 #   MAX_ROUNDS=10    число раундов симуляции
 #   REQUIREMENT=...  свой вопрос к симуляции вместо стандартного
-#   FETCH_ONLY=1     только скачать и показать текст лендингов, без симуляции
+#   MAX_PAGES=15     сколько внутренних страниц сайта брать вместе с главной (0 — только главная)
+#   FETCH_ONLY=1     только скачать текст лендингов в landings/, без симуляции
+#   FETCH=0          не скачивать, а взять уже лежащий landings/<домен>.md (например, поправленный руками)
 #
-# Нужно: git, curl, uv (https://astral.sh/uv), залогиненный Claude Code CLI (`claude`).
+# Нужно: git, uv (https://astral.sh/uv), залогиненный Claude Code CLI (`claude`).
 # Результаты: results/<домен>/<run_id>/ (report/verdict.json, report/report.md, visuals/*.svg)
 set -euo pipefail
 
@@ -18,13 +20,14 @@ MIRO="$ROOT/mirofish"
 LANDINGS="$ROOT/landings"
 RESULTS="$ROOT/results"
 MAX_ROUNDS="${MAX_ROUNDS:-10}"
+MAX_PAGES="${MAX_PAGES:-15}"
 
 if [ "$#" -gt 0 ]; then DOMAINS=("$@"); else DOMAINS=(watbot.ru watbot.org); fi
 
 # uv и claude часто ставятся в ~/.local/bin, которого может не быть в PATH
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-for bin in curl uv claude; do
+for bin in uv claude; do
   command -v "$bin" >/dev/null || { echo "Не найден '$bin' в PATH" >&2; exit 1; }
 done
 
@@ -37,79 +40,17 @@ uv run mirofish doctor
 mkdir -p "$LANDINGS" "$RESULTS"
 
 for domain in "${DOMAINS[@]}"; do
-  echo "=== $domain: скачиваю лендинг ===" >&2
-  html="$LANDINGS/$domain.html"
   txt="$LANDINGS/$domain.md"
-  curl -fsSL -m 60 -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36" \
-    -o "$html" "https://$domain/"
-
-  # HTML -> текст: заголовки, абзацы, кнопки, ссылки; без скриптов и стилей.
-  uv run python - "$html" "$txt" "$domain" <<'PY'
-import re, sys
-from html.parser import HTMLParser
-
-src, dst, domain = sys.argv[1:4]
-
-class Extract(HTMLParser):
-    SKIP = {"script", "style", "noscript", "svg", "template"}
-    BLOCK = {"p", "div", "section", "li", "br", "tr", "article", "header", "footer",
-             "h1", "h2", "h3", "h4", "h5", "h6", "button", "a", "td", "label"}
-
-    def __init__(self):
-        super().__init__()
-        self.out, self.skip, self.title, self.meta = [], 0, "", []
-        self._in_title = False
-
-    def handle_starttag(self, tag, attrs):
-        a = dict(attrs)
-        if tag in self.SKIP:
-            self.skip += 1
-        elif tag == "title":
-            self._in_title = True
-        elif tag == "meta" and a.get("content") and (a.get("name") or a.get("property") or "").lower() in (
-            "description", "og:title", "og:description", "keywords"):
-            self.meta.append(f"{a.get('name') or a.get('property')}: {a['content']}")
-        if tag in self.BLOCK:
-            self.out.append("\n")
-        if tag in ("h1", "h2", "h3"):
-            self.out.append("#" * int(tag[1]) + " ")
-        if tag == "li":
-            self.out.append("- ")
-
-    def handle_endtag(self, tag):
-        if tag in self.SKIP and self.skip:
-            self.skip -= 1
-        elif tag == "title":
-            self._in_title = False
-        if tag in self.BLOCK:
-            self.out.append("\n")
-
-    def handle_data(self, data):
-        if self._in_title:
-            self.title += data
-        elif not self.skip:
-            self.out.append(data)
-
-p = Extract()
-p.feed(open(src, encoding="utf-8", errors="replace").read())
-body = "".join(p.out)
-body = re.sub(r"[ \t\xa0]+", " ", body)
-lines, seen = [], set()
-for line in (l.strip() for l in body.splitlines()):
-    if line and line not in seen:  # лендинги часто дублируют блоки под мобильную/десктопную версии
-        seen.add(line)
-        lines.append(line)
-text = f"# Лендинг https://{domain}/\n\nTitle: {p.title.strip()}\n" + "\n".join(p.meta) + "\n\n" + "\n".join(lines) + "\n"
-open(dst, "w", encoding="utf-8").write(text)
-print(f"{domain}: {len(text)} символов текста -> {dst}", file=sys.stderr)
-if len(text) < 800:
-    print(f"ВНИМАНИЕ: у {domain} очень мало текста — возможно, лендинг рендерится JavaScript'ом. "
-          f"Сохраните текст страницы вручную в {dst} и перезапустите.", file=sys.stderr)
-PY
+  if [ "${FETCH:-1}" = 1 ]; then
+    echo "=== $domain: скачиваю главную и до $MAX_PAGES внутренних страниц ===" >&2
+    uv run python "$ROOT/fetch_landing.py" "$domain" "$txt" --max-pages "$MAX_PAGES"
+  else
+    [ -f "$txt" ] || { echo "Нет файла $txt (FETCH=0 берёт уже сохранённый текст)" >&2; exit 1; }
+  fi
 
   if [ "${FETCH_ONLY:-0}" = 1 ]; then continue; fi
 
-  requirement="${REQUIREMENT:-Это текст лендинга https://$domain/ (сервис Watbot — конструктор чат-ботов с ИИ для бизнеса). \
+  requirement="${REQUIREMENT:-Это текст лендинга https://$domain/ и его внутренних страниц (сервис Watbot — конструктор чат-ботов с ИИ для бизнеса). \
 Смоделируй, как на этот лендинг реагирует его целевая аудитория: владельцы малого и среднего бизнеса, маркетологи, \
 SMM-специалисты, фрилансеры-ботоделы и агентства. Что их цепляет, что непонятно, какие возражения и недоверие возникают, \
 как они сравнивают предложение с конкурентами, насколько вероятна регистрация или покупка и что именно на странице \
