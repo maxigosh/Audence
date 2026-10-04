@@ -22,6 +22,7 @@ SKIP_PATH = re.compile(
     r"|^/(ru|en|de|es|fr|it|pt|kk|kz|uz|uk|ua|tr|pl|zh)(/|$)",
     re.I,
 )
+PRIORITY_PATH = re.compile(r"pric|tarif|plan|cost|stoim|ceny|оплат|contact|kontakt", re.I)
 SKIP_EXT = re.compile(r"\.(pdf|jpe?g|png|gif|webp|svg|ico|zip|rar|mp4|mp3|xml|json|txt|css|js)$", re.I)
 
 
@@ -96,7 +97,9 @@ def internal_links(base_url: str, hrefs: list[str]) -> list[str]:
         url = urlunsplit((u.scheme, u.netloc, path, "", ""))
         if url not in urls:
             urls.append(url)
-    return urls
+    # Тарифы и контакты важнее для конверсии, чем очередная страница фичи: ставим их первыми,
+    # чтобы они не отрезались лимитом знаков.
+    return sorted(urls, key=lambda url: not PRIORITY_PATH.search(urlsplit(url).path))
 
 
 def main() -> int:
